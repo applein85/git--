@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>육아휴직 계산기</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 20px;
+      max-width: 480px;
+      margin: auto;
+    }
+    .question {
+      margin-bottom: 20px;
+    }
+    .question label::before {
+      content: "● ";
+      font-size: 20px;
+      color: #555;
+      margin-right: 4px;
+    }
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+    }
+    input, select {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 10px;
+      margin-bottom: 10px;
+      font-size: 16px;
+    }
+    select {
+      appearance: none;
+      background: url('data:image/svg+xml;charset=UTF-8,<svg fill="gray" height="16" viewBox="0 0 24 24" width="16" xmlns="http://www.w3.org/2000/svg"><path d="M7 10l5 5 5-5z"/></svg>') no-repeat right 10px center;
+      background-color: white;
+      background-size: 16px 16px;
+      padding-right: 36px;
+    }
+    .hidden {
+      display: none;
+    }
+    .result {
+      background: #eef5ff;
+      padding: 20px;
+      border-radius: 10px;
+      border: 1px solid #c3d7f2;
+    }
+    .result strong {
+      font-size: 18px;
+      color: #2a4f9c;
+    }
+  </style>
+</head>
+<body>
+  <h2>📅 육아휴직 계산기</h2>
+
+  <div class="question" id="q1">
+    <label>출산 예정일은 언제인가요?</label>
+    <input type="date" id="dueDate" />
+  </div>
+
+  <div class="question hidden" id="q2">
+    <label>다태아인가요?</label>
+    <select id="isMultiple">
+      <option value="">선택하세요</option>
+      <option value="y">예</option>
+      <option value="n">아니오</option>
+    </select>
+  </div>
+
+  <div class="question hidden" id="q3">
+    <label>원하는 휴직 시작일이 있나요?</label>
+    <select id="hasCustomStart">
+      <option value="">선택하세요</option>
+      <option value="yes">예</option>
+      <option value="no">아니오</option>
+    </select>
+  </div>
+
+  <div class="question hidden" id="q4">
+    <label>원하는 휴직 시작일을 입력해주세요</label>
+    <input type="date" id="customStart" />
+  </div>
+
+  <div class="question hidden" id="q5">
+    <label>출산일 며칠 전에 쉬고 싶으신가요?</label>
+    <input type="number" id="earlyDays" placeholder="예: 14" />
+  </div>
+
+  <div class="question hidden" id="q6">
+    <label>잔여 연차는 며칠인가요?</label>
+    <input type="number" id="leaveDays" placeholder="예: 9" />
+  </div>
+
+  <div class="question hidden" id="q7">
+    <label>원하는 육아휴직 개월 수는 몇 개월인가요?</label>
+    <input type="number" id="parentalMonths" placeholder="예: 12" />
+  </div>
+
+  <div class="result hidden" id="result"></div>
+
+  <button onclick="location.reload()" style="margin-top: 20px; padding: 10px 20px; font-size: 16px; width: 100%;">초기화</button>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const $ = (id) => document.getElementById(id);
+
+      $("dueDate").addEventListener("change", () => validateAndShow(1, "dueDate"));
+      $("isMultiple").addEventListener("change", () => validateAndShow(2, "isMultiple"));
+      $("hasCustomStart").addEventListener("change", () => {
+        const choice = $("hasCustomStart").value;
+        $("q4").classList.toggle("hidden", choice !== "yes");
+        $("q5").classList.toggle("hidden", choice !== "no");
+        validateAndShow(3, "hasCustomStart");
+      });
+      $("customStart").addEventListener("change", () => validateAndShow(4, "customStart"));
+      $("earlyDays").addEventListener("input", () => validateAndShow(5, "earlyDays"));
+      $("leaveDays").addEventListener("input", () => validateAndShow(6, "leaveDays"));
+      $("parentalMonths").addEventListener("input", calculate);
+
+      function validateAndShow(current, inputId) {
+        const value = $(inputId).value;
+        const next = $("q" + (current + 1));
+
+        // q3 이후 로직은 handleStartChoice가 제어함
+        if (inputId === "hasCustomStart") return;
+
+        if (value && next) next.classList.remove("hidden");
+        updateResultIfNeeded();
+      }
+
+      function formatDate(d) {
+        return d.toISOString().split("T")[0];
+      }
+
+      function isWeekendOrHoliday(date) {
+        const holidays = ["2025-01-01", "2025-03-01", "2025-05-05", "2025-06-06", "2025-08-15",
+          "2025-09-14", "2025-09-15", "2025-09-16", "2025-10-03", "2025-10-09", "2025-12-25", "2025-05-06"];
+        const day = date.getDay();
+        const dateStr = formatDate(date);
+        return day === 0 || day === 6 || holidays.includes(dateStr);
+      }
+
+      function countWeekdays(start, end) {
+        let days = 0;
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+          if (!isWeekendOrHoliday(new Date(d))) days++;
+        }
+        return days;
+      }
+
+      function updateResultIfNeeded() {
+        if ($("dueDate").value && $("isMultiple").value && $("leaveDays").value && $("parentalMonths").value) {
+          calculate();
+        }
+      }
+
+      function calculate() {
+        const dueDate = new Date($("dueDate").value);
+        const isMultiple = $("isMultiple").value === "y";
+        const earlyDays = parseInt($("earlyDays").value || "0");
+        const leaveDays = parseInt($("leaveDays").value);
+        const parentalMonths = parseInt($("parentalMonths").value);
+        const customStartStr = $("customStart").value;
+
+        let leaveStart, leaveEnd;
+
+        if (customStartStr) {
+          leaveStart = new Date(customStartStr);
+          leaveEnd = new Date(leaveStart);
+          let count = 0;
+          while (count < leaveDays) {
+            if (!isWeekendOrHoliday(leaveEnd)) count++;
+            if (count < leaveDays) leaveEnd.setDate(leaveEnd.getDate() + 1);
+          }
+        } else {
+          leaveEnd = new Date(dueDate);
+          leaveEnd.setDate(leaveEnd.getDate() - earlyDays - 1);
+          leaveStart = new Date(leaveEnd);
+          let count = 0;
+          while (count < leaveDays) {
+            if (!isWeekendOrHoliday(leaveStart)) count++;
+            if (count < leaveDays) leaveStart.setDate(leaveStart.getDate() - 1);
+          }
+        }
+
+        const weekdays = countWeekdays(leaveStart, leaveEnd);
+        const maternityDays = isMultiple ? 120 : 90;
+        const maternityStart = new Date(leaveEnd); maternityStart.setDate(maternityStart.getDate() + 1);
+        const maternityEnd = new Date(maternityStart); maternityEnd.setDate(maternityEnd.getDate() + maternityDays - 1);
+        const parentingStart = new Date(maternityEnd); parentingStart.setDate(parentingStart.getDate() + 1);
+        const parentingEnd = new Date(parentingStart);
+        parentingEnd.setMonth(parentingEnd.getMonth() + parentalMonths);
+        parentingEnd.setDate(parentingEnd.getDate() - 1);
+
+        const babyBorn = new Date(dueDate);
+        const withBabyStart = new Date(babyBorn);
+        withBabyStart.setDate(withBabyStart.getDate() + 1);
+        const withBabyDays = Math.round((parentingEnd - withBabyStart) / 86400000) + 1;
+        const totalRestDays = Math.round((parentingEnd - leaveStart) / 86400000) + 1;
+        const parentingDays = Math.round((parentingEnd - parentingStart) / 86400000) + 1;
+        const actualMonths = (parentingEnd.getFullYear() - parentingStart.getFullYear()) * 12 +
+          (parentingEnd.getMonth() - parentingStart.getMonth()) +
+          (parentingEnd.getDate() >= parentingStart.getDate() ? 1 : 0);
+
+        $("result").classList.remove("hidden");
+        $("result").innerHTML = `
+          <strong>✔️ 결과 안내</strong><br/><br/>
+          <b>연차:</b> ${formatDate(leaveStart)} ~ ${formatDate(leaveEnd)}<br/>
+          - 주말/공휴일 제외된 실연차: ${weekdays}일<br/><br/>
+          <b>출산휴가:</b> ${formatDate(maternityStart)} ~ ${formatDate(maternityEnd)}<br/>
+          - 총 ${maternityDays}일 (주말/공휴일 포함)<br/><br/>
+          <b>육아휴직:</b> ${formatDate(parentingStart)} ~ ${formatDate(parentingEnd)}<br/>
+          - 총 ${actualMonths}개월 (${parentingDays}일, 주말/공휴일 포함)<br/><br/>
+          <b>엄마가 쉬는 전체 기간:</b><br/> ${formatDate(leaveStart)} ~ ${formatDate(parentingEnd)} (${totalRestDays}일)<br/>
+          <b>아기와 함께 보내는 기간:</b><br/> ${formatDate(withBabyStart)} ~ ${formatDate(parentingEnd)} (${withBabyDays}일)
+        `;
+      }
+    });
+  </script>
+</body>
+</html>
